@@ -258,10 +258,11 @@ ch.on('presence',{event:'sync'},()=>{if(CH===ch){onSync();return}synced=true;if(
 ch.subscribe(s=>{if(s==='SUBSCRIBED'){subd=true;pgSet(55,'部屋を確認中…');setTimeout(()=>fin(ch),synced?120:650)}else if(s==='CHANNEL_ERROR'||s==='TIMED_OUT')fin(null)});setTimeout(()=>fin(null),8000)})}
 async function openRoom(c,create){if(!sb)return '通信ライブラリを読み込めませんでした(ネット接続を確認)';
 pgSet(35,'サーバーへ接続中…(目安 約1〜2秒)');const ch=await connectCh(c);if(!ch)return 'サーバーに接続できませんでした';pgSet(80,'名簿に登録中…');
-const st=ch.presenceState(),ids=Object.keys(st);
+let st=ch.presenceState(),ids=Object.keys(st);
+if(!create)for(let i=0;i<40&&!ids.length;i++){pgSet(70,'部屋を探しています…');await new Promise(r=>setTimeout(r,250));st=ch.presenceState();ids=Object.keys(st)}
 const bail=async m=>{try{await sb.removeChannel(ch)}catch(e){}return m};
 if(create&&ids.length)return bail('used');
-if(!create){if(!ids.length)return bail('その部屋は見つかりません');if(ids.length>=4)return bail('満員です(最大4人)');if(ids.some(k=>{const a=st[k];return a[a.length-1].g}))return bail('すでにゲーム中のため参加できません')}
+if(!create){if(!ids.length)return bail('部屋「'+c+'」が見つかりません。コードの打ち間違い、またはホストが退出した可能性があります');if(ids.length>=4)return bail('満員です(最大4人)');if(ids.some(k=>{const a=st[k];return a[a.length-1].g}))return bail('すでにゲーム中のため参加できません')}
 CH=ch;mp=true;code=c;roster=parseSt(st);hostId=create?myid:pickHost(roster);PEERS={};PL=[];PNM={};gameOn=false;fled=false;
 await CH.track(meta());onSync();pgSet(100,'完成!');openLobby();return ''}
 function leaveRoom(){clearInterval(netT);if(CH&&sb)sb.removeChannel(CH);CH=null;mp=false;gameOn=false;lobbyOpen=false;roster={};PEERS={};hostId=''}
@@ -393,8 +394,16 @@ $('lbCopy').onclick=()=>{try{navigator.clipboard.writeText(code);$('lbCopy').tex
 $('lbLeave').onclick=()=>{leaveRoom();$('lobby').style.display='none';$('start').style.display='flex';$('rs').textContent=''};
 $('lbStart').onclick=()=>{if(hostId!==myid||gameOn)return;const pl=orderList().slice(0,4).map(r=>({id:r.id,name:r.name}));const msg={t:'start',pl};mpEmit(msg);beginMp(msg);[500,1200,2500].forEach(t=>setTimeout(()=>mpEmit(msg),t))};
 $('wB').onclick=()=>{$('end').style.display='none'};
-addEventListener('pagehide',()=>{try{if(CH&&sb)sb.removeChannel(CH)}catch(e){}});
+// 修正: pagehide での removeChannel は削除(アプリ切替でホストの部屋が消えるのを防ぐ)
 hold($('rvB'),()=>rvHold=true,()=>rvHold=false);
 $('reB').onclick=()=>location.reload();
+// 修正: 復帰時と定期的に名簿へ再登録
+document.addEventListener('visibilitychange',()=>{
+  if(document.visibilityState==='visible'&&CH&&sb){
+    try{sb.realtime.connect()}catch(e){}
+    setTimeout(track,300);setTimeout(track,1500);
+  }
+});
+setInterval(()=>{if(CH&&(!roster[myid]||hostId===myid))track()},10000);
 camera.position.set(px,py,pz);camera.rotation.set(0,yaw,0);requestAnimationFrame(loop);
 </script></body></html>
